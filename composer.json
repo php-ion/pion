@@ -1,0 +1,24 @@
+{
+  "name": "phpion/server",
+  "description": "Asynchronous raw server and HTTP server based on ION extension",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Ivan Shalganov",
+      "email": "a.cobest@gmail.com"
+    }
+  ],
+  "require": {
+    "php": ">=7.0",
+    "ext-ion": "*",
+    "phpion/phpion": ">=0.7"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "*"
+  },
+  "autoload": {
+    "psr-4": {
+	  "ION\\": "src"
+	}
+  }
+}
