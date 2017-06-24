@@ -29,10 +29,7 @@ class RawServerTest extends TestCase
     }
 
 
-    /**
-     * @group dev
-     */
-    public function _testAccept()
+    public function testAccept()
     {
 
         $server = new RawServer();
@@ -67,8 +64,9 @@ class RawServerTest extends TestCase
         $this->assertSame("PING", $this->data["request"]);
         $this->assertArrayHasKey("response", $this->data);
         $this->assertSame("PONG", $this->data["response"]);
-//        $server->
+        $server->shutdown();
     }
+
 
     public function testMaxConnections() {
         $server = new RawServer();
@@ -125,18 +123,42 @@ class RawServerTest extends TestCase
             $this->assertArrayHasKey($socket2->getLocalName(), $this->data["connects"]);
             $this->assertArrayHasKey($socket3->getLocalName(), $this->data["connects"]);
             $this->assertArrayHasKey($socket4->getLocalName(), $this->data["connects"]);
+            $socket5 = Stream::socket(self::SERVER_ADDR);
+
+            yield self::microWait();
+
+            $this->assertCount(3, $this->data["connects"]);
+            $this->assertSame(3, $server->getConnectionsCount());
+            $this->assertArrayNotHasKey($socket1->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket2->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket3->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket4->getLocalName(), $this->data["connects"]);
+            $this->assertArrayNotHasKey($socket5->getLocalName(), $this->data["connects"]);
+            $server->setMaxConnections(4);
+
+            yield self::microWait();
+
+            $this->assertCount(4, $this->data["connects"]);
+            $this->assertSame(4, $server->getConnectionsCount());
+            $this->assertArrayNotHasKey($socket1->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket2->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket3->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket4->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket5->getLocalName(), $this->data["connects"]);
             $socket2->shutdown(true);
             $socket3->shutdown(true);
 
             yield self::microWait();
 
-            $this->assertCount(1, $this->data["connects"]);
-            $this->assertSame(1, $server->getConnectionsCount());
+            $this->assertCount(2, $this->data["connects"]);
+            $this->assertSame(2, $server->getConnectionsCount());
             $this->assertArrayNotHasKey($socket1->getLocalName(), $this->data["connects"]);
             $this->assertArrayNotHasKey($socket2->getLocalName(), $this->data["connects"]);
             $this->assertArrayNotHasKey($socket3->getLocalName(), $this->data["connects"]);
             $this->assertArrayHasKey($socket4->getLocalName(), $this->data["connects"]);
+            $this->assertArrayHasKey($socket5->getLocalName(), $this->data["connects"]);
             $socket4->shutdown(true);
+            $socket5->shutdown(true);
 
             yield self::microWait();
 
@@ -146,6 +168,7 @@ class RawServerTest extends TestCase
             $this->assertArrayNotHasKey($socket2->getLocalName(), $this->data["connects"]);
             $this->assertArrayNotHasKey($socket3->getLocalName(), $this->data["connects"]);
             $this->assertArrayNotHasKey($socket4->getLocalName(), $this->data["connects"]);
+            $this->assertArrayNotHasKey($socket5->getLocalName(), $this->data["connects"]);
 
             ION::stop();
         })->onFail(function (\Throwable $e) {
@@ -158,6 +181,7 @@ class RawServerTest extends TestCase
         if(isset($this->data["error"])) {
             throw $this->data["error"];
         }
+        $server->shutdown();
     }
 
     public function log($msg) {

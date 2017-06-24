@@ -5,7 +5,7 @@ namespace ION;
 use ION\Server\Connect;
 
 class RawServer {
-
+    const STATUS_DISABLED = 1;
     /**
      * @var Listener[]
      */
@@ -55,6 +55,8 @@ class RawServer {
 
     private $_stream_class = Connect::class;
 
+    private $_flags = 0;
+
 
     public function __construct() {
         $this->_pool = new \SplPriorityQueue();
@@ -83,12 +85,14 @@ class RawServer {
         foreach ($this->_listeners as $listener) {
             $listener->enable();
         }
+        $this->_flags &= ~self::STATUS_DISABLED;
     }
 
-    public function disable(bool $temporary = false) {
+    public function disable() {
         foreach ($this->_listeners as $listener) {
             $listener->disable();
         }
+        $this->_flags |= self::STATUS_DISABLED;
     }
 
     public function _accept(Connect $connect) {
@@ -146,6 +150,9 @@ class RawServer {
             $this->_max_conns = PHP_INT_MAX;
         } else {
             $this->_max_conns = $max;
+        }
+        if($this->_flags & self::STATUS_DISABLED) {
+            $this->enable();
         }
     }
 
