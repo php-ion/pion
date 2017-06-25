@@ -11,7 +11,7 @@
   "require": {
     "php": ">=7.0",
     "ext-ion": "*",
-    "phpion/phpion": ">=0.7"
+    "phpion/phpion": "dev-master"
   },
   "require-dev": {
     "phpunit/phpunit": "*"

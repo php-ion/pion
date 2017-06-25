@@ -63,7 +63,7 @@ class RawServer {
         $this->_pool->setExtractFlags(\SplPriorityQueue::EXTR_BOTH);
         $this->_accepted   = new Sequence([$this, "_accept"]);
         $this->_close      = new Sequence();
-        $this->_disconnect = new Sequence(/*[$this, "_disconnect"]*/);
+        $this->_disconnect = new Sequence();
         $this->_timeout    = new Sequence();
     }
 
@@ -95,7 +95,8 @@ class RawServer {
         $this->_flags |= self::STATUS_DISABLED;
     }
 
-    public function _accept(Connect $connect) {
+    protected function _accept(Connect $connect) {
+        $connect->setup($this)->suspend();
         $this->_peers[$connect->getPeerName()] = $connect;
         if(count($this->_peers) >= $this->_max_conns) {
             $this->disable();
@@ -199,6 +200,11 @@ class RawServer {
             }
             unset($socket->slot, $socket->timeout_cb);
         }
+    }
+
+    public function release(Connect $connect) {
+        $connect->resume();
+        $this->setTimeout($connect, $this->_idle_timeout);
     }
 
     /**
