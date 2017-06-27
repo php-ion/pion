@@ -7,12 +7,12 @@ use ION;
 use ION\Server\Connect;
 use PHPUnit\Framework\TestCase;
 
-class RawServerTest extends TestCase
+class SocketServerTest extends TestCase
 {
     const SERVER_ADDR = "127.0.0.1:8967";
     public $data = [];
     /**
-     * @var RawServer
+     * @var SocketServer
      */
     public $server;
 
@@ -30,7 +30,7 @@ class RawServerTest extends TestCase
     {
         parent::setUp();
         $this->data = [];
-        $this->server = new RawServer();
+        $this->server = new SocketServer();
         $this->server->listen(self::SERVER_ADDR);
     }
 
@@ -205,7 +205,11 @@ class RawServerTest extends TestCase
         }
     }
 
-    public function testIdle() {
+    public function testReserveRelease() {
+
+    }
+
+    public function testTimeout() {
         $server = $this->server;
         $server->setIdleTimeout(1);
 
@@ -216,6 +220,10 @@ class RawServerTest extends TestCase
 
         $server->whenDisconnected()->then(function(Connect $connect) {
             unset($this->data["connects"][$connect->getPeerName()]);
+        });
+
+        $server->whenTimeout()->then(function (Connect $connect) {
+            $this->data["timeouts"][$connect->getPeerName()] = time();
         });
 
         ION::promise(function() use ($server) {

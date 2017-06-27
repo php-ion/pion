@@ -4,7 +4,7 @@ namespace ION;
 
 use ION\Server\Connect;
 
-class RawServer {
+class SocketServer {
     const STATUS_DISABLED = 1;
     /**
      * @var Listener[]
@@ -14,6 +14,8 @@ class RawServer {
     private $_max_conns = PHP_INT_MAX;
 
     private $_idle_timeout = 30;
+
+    private $_request_timeout = 30;
 
     /**
      * @var Sequence
@@ -59,12 +61,13 @@ class RawServer {
 
 
     public function __construct() {
-        $this->_pool = new \SplPriorityQueue();
-        $this->_pool->setExtractFlags(\SplPriorityQueue::EXTR_BOTH);
+        $this->_pool       = new \SplPriorityQueue();
         $this->_accepted   = new Sequence([$this, "_accept"]);
         $this->_close      = new Sequence();
         $this->_disconnect = new Sequence();
         $this->_timeout    = new Sequence();
+
+        $this->_pool->setExtractFlags(\SplPriorityQueue::EXTR_BOTH);
     }
 
     /**
@@ -167,10 +170,9 @@ class RawServer {
 
     /**
      * @param Connect $socket
-     * @param $timeout
-     * @param callable $cb
+     * @param int $timeout
      */
-    public function setTimeout(Connect $socket, $timeout, callable $cb = null) {
+    public function setTimeout(Connect $socket, int $timeout) {
         $timeout = -(time() + $timeout);
         $this->unsetTimeout($socket);
         if(!isset($this->_slots[$timeout])) {
@@ -183,9 +185,6 @@ class RawServer {
         $socket->timeout = -$timeout;
         $slot[$socket->getPeerName()] = $socket;
         $socket->slot = $slot;
-        if($cb) {
-            $socket->timeout_cb = $cb;
-        }
     }
 
     /**
@@ -204,7 +203,16 @@ class RawServer {
 
     public function release(Connect $connect) {
         $connect->resume();
-        $this->setTimeout($connect, $this->_idle_timeout);
+        if ($this->_idle_timeout > 0) {
+            $this->setTimeout($connect, $this->_idle_timeout);
+        } elseif ($this->_idle_timeout === 0) {
+            $connect->shutdown();
+        }
+    }
+
+    public function reserve(Connect $connect) {
+        $connect->suspend();
+        $this->unsetTimeout($connect);
     }
 
     /**
@@ -225,7 +233,7 @@ class RawServer {
                         } else {
                             $this->_timeout->__invoke($socket);
                         }
-                    } catch(\Exception $e) {
+                    } catch(\Throwable $e) {
                         $socket->shutdown();
                     }
                 }

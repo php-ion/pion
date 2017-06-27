@@ -2,7 +2,7 @@
 
 namespace ION\Server;
 
-use ION\RawServer;
+use ION\SocketServer;
 use ION\Stream;
 
 class Connect extends Stream
@@ -26,9 +26,13 @@ class Connect extends Stream
      */
     public $slot;
     /**
-     * @var RawServer
+     * @var SocketServer
      */
     public $server;
+    /**
+     * @var mixed
+     */
+    public $request;
 
 
     public function __construct()
@@ -41,10 +45,16 @@ class Connect extends Stream
         return $this->ts;
     }
 
-    public function setup(RawServer $server)
+    public function setup(SocketServer $server)
     {
         $this->server = $server;
         return $this;
+    }
+
+    public function busy() {
+        if ($this->server) {
+            $this->server->reserve($this);
+        }
     }
 
     public function release()
@@ -52,6 +62,10 @@ class Connect extends Stream
         if ($this->server) {
             $this->server->release($this);
         }
+    }
+
+    public function getServer() {
+        return $this->server;
     }
 
 }

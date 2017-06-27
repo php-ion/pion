@@ -6,7 +6,7 @@ namespace ION;
 use ION\HTTP\Request;
 use ION\Server\Connect;
 
-class HTTPServer extends RawServer
+class WebServer extends SocketServer
 {
 
     /**
