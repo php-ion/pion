@@ -16,14 +16,22 @@ class SocketServerTest extends TestCase
      */
     public $server;
 
+    /**
+     * Wait 0.02 sec
+     * @return Deferred
+     */
     public static function microWait() : Deferred
     {
         return ION::await(0.02);
     }
 
-    public static function secondWait() : Deferred
+    /**
+     * Wait 0.1 sec
+     * @return Deferred
+     */
+    public static function miniWait() : Deferred
     {
-        return ION::await(1.0);
+        return ION::await(0.1);
     }
 
     public function setUp()
@@ -205,25 +213,19 @@ class SocketServerTest extends TestCase
         }
     }
 
-    public function testReserveRelease() {
-
-    }
-
     public function testTimeout() {
         $server = $this->server;
-        $server->setIdleTimeout(1);
+        $server->setIdleTimeout(0.09);
+        $server->setRequestTimeout(0.19);
+        $this->assertSame(0.09, $server->getIdleTimeout());
+        $this->assertSame(0.19, $server->getRequestTimeout());
 
-        $server->whenAccepted()->then(function(Connect $connect) {
-            $this->data["connects"][$connect->getPeerName()] = $connect;
-            $connect->release();
+        $server->whenIdleTimeout()->then(function (Connect $connect) {
+            $this->data["timeouts"][$connect->getPeerName()] = microtime(true);
         });
 
-        $server->whenDisconnected()->then(function(Connect $connect) {
-            unset($this->data["connects"][$connect->getPeerName()]);
-        });
-
-        $server->whenTimeout()->then(function (Connect $connect) {
-            $this->data["timeouts"][$connect->getPeerName()] = time();
+        $server->whenRequestTimeout()->then(function (Connect $connect) {
+            $this->data["timeouts"][$connect->getPeerName()] = microtime(true);
         });
 
         ION::promise(function() use ($server) {
@@ -231,10 +233,20 @@ class SocketServerTest extends TestCase
 
             yield self::microWait();
 
+//            $server->getConnection()
+
+            $socket1 = Stream::socket(self::SERVER_ADDR);
+
+        })->onFail(function (\Throwable $e) {
+            $this->data["error"] = $e;
+            ION::stop();
         });
 
-        $this->assertTrue(true);
+        ION::dispatch();
 
+        if(isset($this->data["error"])) {
+            throw $this->data["error"];
+        }
     }
 
 }

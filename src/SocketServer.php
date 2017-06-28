@@ -13,14 +13,28 @@ class SocketServer {
 
     private $_max_conns = PHP_INT_MAX;
 
+    /**
+     * @var float
+     */
     private $_idle_timeout = 30;
 
+    /**
+     * @var float
+     */
     private $_request_timeout = 30;
 
     /**
      * @var Sequence
      */
-    private $_timeout;
+    private $_accepted;
+    /**
+     * @var Sequence
+     */
+    private $_when_idle_timeout;
+    /**
+     * @var Sequence
+     */
+    private $_when_req_timeout;
     /**
      * @var Sequence
      */
@@ -46,14 +60,9 @@ class SocketServer {
     private $_pool;
 
     /**
-     * @var array
+     * @var \ArrayObject[]
      */
     private $_slots = [];
-
-    /**
-     * @var Sequence
-     */
-    private $_accepted;
 
     private $_stream_class = Connect::class;
 
@@ -61,11 +70,12 @@ class SocketServer {
 
 
     public function __construct() {
-        $this->_pool       = new \SplPriorityQueue();
-        $this->_accepted   = new Sequence([$this, "_accept"]);
-        $this->_close      = new Sequence();
-        $this->_disconnect = new Sequence();
-        $this->_timeout    = new Sequence();
+        $this->_pool              = new \SplPriorityQueue();
+        $this->_accepted          = new Sequence([$this, "_accept"]);
+        $this->_close             = new Sequence();
+        $this->_disconnect        = new Sequence();
+        $this->_when_idle_timeout = new Sequence();
+        $this->_when_req_timeout  = new Sequence();
 
         $this->_pool->setExtractFlags(\SplPriorityQueue::EXTR_BOTH);
     }
@@ -82,6 +92,15 @@ class SocketServer {
         $listener->whenAccepted()->then($this->_accepted);
         $listener->setStreamClass($this->_stream_class);
         return $listener;
+    }
+
+    protected function _setConnectionClass(string $class) {
+        if (!is_subclass_of($class, Connect::class)) {
+            throw new \InvalidArgumentException("Connection class have to extends " . Connect::class);
+        }
+        foreach ($this->_listeners as $listener) {
+            $listener->setStreamClass($class);
+        }
     }
 
     public function enable() {
@@ -117,6 +136,10 @@ class SocketServer {
         return $connect;
     }
 
+    protected function _timeout(Connect $connect) {
+
+    }
+
     public function whenAccepted() : Sequence {
         return $this->_accepted;
     }
@@ -125,16 +148,16 @@ class SocketServer {
         return $this->_disconnect;
     }
 
-    public function whenTimeout() : Sequence {
-        return $this->_timeout;
+    public function whenIdleTimeout() : Sequence {
+        return $this->_when_idle_timeout;
+    }
+
+    public function whenRequestTimeout() : Sequence {
+        return $this->_when_req_timeout;
     }
 
     public function whenClose() : Sequence {
         return $this->_close;
-    }
-
-    public function getConnectionsCount() : int {
-        return count($this->_peers);
     }
 
     /**
@@ -145,6 +168,40 @@ class SocketServer {
     public function getListener(string $address) : Listener {
         return $this->_listeners[$address];
     }
+
+    /**
+     * @param string $peer
+     *
+     * @return bool
+     */
+    public function hasConnection(string $peer) : bool {
+        return isset($this->_peers[$peer]);
+    }
+
+    /**
+     * @param string $peer
+     *
+     * @return Connect|null
+     */
+    public function getConnection(string $peer) {
+        return $this->_peers[$peer] ?? null;
+    }
+
+    /**
+     * Get all connections
+     * @return Connect[]
+     */
+    public function getConnections() : array {
+        return $this->_peers;
+    }
+
+    /**
+     * @return int
+     */
+    public function getConnectionsCount() : int {
+        return count($this->_peers);
+    }
+
 
     /**
      * @param int $max
@@ -160,20 +217,45 @@ class SocketServer {
         }
     }
 
+    public function getMaxConnections() : int {
+        return $this->_max_conns;
+    }
+
     /**
-     * @param int $secs
+     * @param float $secs
      */
-    public function setIdleTimeout(int $secs) {
+    public function setIdleTimeout(float $secs) {
         $this->_idle_timeout = $secs;
+    }
+
+    /**
+     * @return float
+     */
+    public function getIdleTimeout() : float {
+        return $this->_idle_timeout;
+    }
+
+     /**
+     * @param float $secs
+     */
+    public function setRequestTimeout(float $secs) {
+        $this->_request_timeout = $secs;
+    }
+
+    /**
+     * @return float
+     */
+    public function getRequestTimeout() : float {
+        return $this->_request_timeout;
     }
 
 
     /**
      * @param Connect $socket
-     * @param int $timeout
+     * @param float $timeout
      */
-    public function setTimeout(Connect $socket, int $timeout) {
-        $timeout = -(time() + $timeout);
+    public function setTimeout(Connect $socket, float $timeout) {
+        $timeout = -(microtime(true) + $timeout);
         $this->unsetTimeout($socket);
         if(!isset($this->_slots[$timeout])) {
             $this->_slots[$timeout] = $slot = new \ArrayObject();
@@ -219,7 +301,8 @@ class SocketServer {
      * Inspect connections
      */
     public function inspect() : array {
-        $time = time();
+        $time = microtime(true);
+        $e    = null;
         while($this->_pool->count() && ($item = $this->_pool->top())) {
             if($time >= abs($item["priority"])) {
                 $slot = $item["data"];
@@ -228,11 +311,7 @@ class SocketServer {
                     /* @var Connect $socket */
                     $this->unsetTimeout($socket);
                     try {
-                        if($socket->timeout_cb) {
-                            call_user_func($socket->timeout_cb, $socket);
-                        } else {
-                            $this->_timeout->__invoke($socket);
-                        }
+                        $this->_timeout($socket);
                     } catch(\Throwable $e) {
                         $socket->shutdown();
                     }
@@ -241,6 +320,10 @@ class SocketServer {
             } else {
                 break;
             }
+        }
+        if($e) {
+            throw new \RuntimeException(
+                "During the inspection there were errors. Last saved as the previous exception.", 0, $e);
         }
         $this->_stats["pool_size"] = $this->_pool->count();
         $this->_stats["peers"] = count($this->_peers);
