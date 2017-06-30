@@ -21,7 +21,7 @@ class SocketServer {
     /**
      * @var float
      */
-    private $_request_timeout = 30;
+    private $_request_timeout = 0;
 
     /**
      * @var Sequence
@@ -118,12 +118,13 @@ class SocketServer {
     }
 
     protected function _accept(Connect $connect) {
-        $connect->setup($this)->suspend();
+        $connect->setup($this);
         $this->_peers[$connect->getPeerName()] = $connect;
         if(count($this->_peers) >= $this->_max_conns) {
             $this->disable();
         }
         $connect->closed()->then([$this, "_disconnect"]);
+        $connect->release();
         return $connect;
     }
 
@@ -137,7 +138,15 @@ class SocketServer {
     }
 
     protected function _timeout(Connect $connect) {
-
+        if($connect->isBusy()) {
+            if($this->_when_req_timeout) {
+               $this->_when_req_timeout->__invoke($connect);
+            }
+        } else {
+            if($this->_when_idle_timeout) {
+               $this->_when_idle_timeout->__invoke($connect);
+            }
+        }
     }
 
     public function whenAccepted() : Sequence {
@@ -294,7 +303,12 @@ class SocketServer {
 
     public function reserve(Connect $connect) {
         $connect->suspend();
-        $this->unsetTimeout($connect);
+        if ($this->_request_timeout) {
+            $this->setTimeout($connect, $this->_request_timeout);
+        } else {
+            $this->unsetTimeout($connect);
+        }
+
     }
 
     /**

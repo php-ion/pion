@@ -10,6 +10,12 @@ use PHPUnit\Framework\TestCase;
 class SocketServerTest extends TestCase
 {
     const SERVER_ADDR = "127.0.0.1:8967";
+
+    const MICRO_WAIT_TIME = 0.02;
+    const MINI_WAIT_TIME = 0.05;
+
+    const TIME_DELTA = 0.025;
+
     public $data = [];
     /**
      * @var SocketServer
@@ -22,16 +28,16 @@ class SocketServerTest extends TestCase
      */
     public static function microWait() : Deferred
     {
-        return ION::await(0.02);
+        return ION::await(self::MICRO_WAIT_TIME);
     }
 
     /**
-     * Wait 0.1 sec
+     * Wait 0.05 sec
      * @return Deferred
      */
     public static function miniWait() : Deferred
     {
-        return ION::await(0.1);
+        return ION::await(self::MINI_WAIT_TIME);
     }
 
     public function setUp()
@@ -215,35 +221,61 @@ class SocketServerTest extends TestCase
 
     public function testTimeout() {
         $server = $this->server;
-        $server->setIdleTimeout(0.09);
-        $server->setRequestTimeout(0.19);
-        $this->assertSame(0.09, $server->getIdleTimeout());
-        $this->assertSame(0.19, $server->getRequestTimeout());
-
-        $server->whenIdleTimeout()->then(function (Connect $connect) {
-            $this->data["timeouts"][$connect->getPeerName()] = microtime(true);
-        });
-
-        $server->whenRequestTimeout()->then(function (Connect $connect) {
-            $this->data["timeouts"][$connect->getPeerName()] = microtime(true);
-        });
+        $server->setIdleTimeout(0.1);
+        $server->setRequestTimeout(0.2);
+        $this->assertEquals(0.1, $server->getIdleTimeout());
+        $this->assertEquals(0.2, $server->getRequestTimeout());\
 
         ION::promise(function() use ($server) {
-            $socket1 = Stream::socket(self::SERVER_ADDR);
+            /* @var Connect $con */
 
+            // checks idle timeout
+            $start = microtime(true);
+            $socket1 = Stream::socket(self::SERVER_ADDR);
             yield self::microWait();
+            $this->assertSame(1, $server->getConnectionsCount());
+            $con = yield $server->whenIdleTimeout();
+            $checkpoint = microtime(true) - $start;
+            $this->assertSame($socket1->getLocalName(), $con->getPeerName());
+            $this->assertEquals(0.1, $checkpoint, '', self::TIME_DELTA);
+            $this->assertSame(1, $server->getConnectionsCount());
 
-//            $server->getConnection()
+            // checks request timeout
+            $start = microtime(true);
+            $this->assertSame(1, $server->getConnectionsCount());
+            $con->busy();
+            $con = yield $server->whenRequestTimeout();
+            $checkpoint = microtime(true) - $start;
+            $this->assertSame($socket1->getLocalName(), $con->getPeerName());
+            $this->assertEquals(0.2, $checkpoint, '', self::TIME_DELTA);
+            $this->assertSame(1, $server->getConnectionsCount());
 
-            $socket1 = Stream::socket(self::SERVER_ADDR);
+            // checks 0.25 request timeout and full idle timeout
+            $start = microtime(true);
+            $this->assertSame(1, $server->getConnectionsCount());
+            $con->busy();
+            yield self::miniWait();
+            $con->release();
+            $con = yield $server->whenIdleTimeout();
+            $checkpoint = microtime(true) - $start;
+            $this->assertSame($socket1->getLocalName(), $con->getPeerName());
+            $this->assertEquals(0.15, $checkpoint, '', self::TIME_DELTA);
+            $this->assertSame(1, $server->getConnectionsCount());
 
+            ION::stop();
         })->onFail(function (\Throwable $e) {
+            $this->data["error"] = $e;
+            ION::stop();
+        });
+
+        ION::interval(0.05, "phpunit")->then([$server, "inspect"])->onFail(function (\Throwable $e) {
             $this->data["error"] = $e;
             ION::stop();
         });
 
         ION::dispatch();
 
+        ION::cancelInterval("phpunit");
         if(isset($this->data["error"])) {
             throw $this->data["error"];
         }

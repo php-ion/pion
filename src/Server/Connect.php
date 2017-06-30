@@ -33,6 +33,7 @@ class Connect extends Stream
      * @var mixed
      */
     public $request;
+    public $busy = false;
 
 
     public function __construct()
@@ -52,13 +53,19 @@ class Connect extends Stream
     }
 
     public function busy() {
+        $this->busy = true;
         if ($this->server) {
             $this->server->reserve($this);
         }
     }
 
+    public function isBusy() {
+        return $this->busy;
+    }
+
     public function release()
     {
+        $this->busy = false;
         if ($this->server) {
             $this->server->release($this);
         }
