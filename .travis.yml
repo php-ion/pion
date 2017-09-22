@@ -1,0 +1,17 @@
+language: php
+
+sudo: false
+
+php:
+  - 7.0
+  - 7.1
+
+before_script:
+  - composer install
+  - vendor/bin/ion info
+
+script:
+  - vendor/bin/ion vendor/bin/phpunit tests/cases
+
+after_script:
+  - php vendor/bin/coveralls

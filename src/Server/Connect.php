@@ -30,10 +30,17 @@ class Connect extends Stream
      */
     public $server;
     /**
-     * @var mixed
+     * @var array
      */
+    public $requests;
     public $request;
+    public $concurrency = 0;
     public $busy = false;
+
+    /**
+     * @var string
+     */
+    public $state = 'none';
 
 
     public function __construct()
@@ -73,6 +80,25 @@ class Connect extends Stream
 
     public function getServer() {
         return $this->server;
+    }
+
+    public function setState(string $state) {
+        $this->state = $state;
+    }
+
+    public function getState() {
+        return $this->state;
+    }
+
+    public function isState(string $state) {
+        return $this->state == $state;
+    }
+
+    public function __debugInfo(): array
+    {
+        $info = parent::__debugInfo();
+        $info["concurrency"] = $this->concurrency;
+        return $info;
     }
 
 }

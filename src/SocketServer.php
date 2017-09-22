@@ -6,6 +6,8 @@ use ION\Server\Connect;
 
 class SocketServer {
     const STATUS_DISABLED = 1;
+
+    const STATE_IDLE = 'idle';
     /**
      * @var Listener[]
      */
@@ -80,6 +82,132 @@ class SocketServer {
         $this->_pool->setExtractFlags(\SplPriorityQueue::EXTR_BOTH);
     }
 
+    protected function _setConnectionClass(string $class) {
+        if (!is_subclass_of($class, Connect::class)) {
+            throw new \InvalidArgumentException("Connection class have to extends " . Connect::class);
+        }
+        foreach ($this->_listeners as $listener) {
+            $listener->setStreamClass($class);
+        }
+    }
+
+    /**
+     * Enable server's listeners
+     */
+    public function enable() {
+        foreach ($this->_listeners as $listener) {
+            $listener->enable();
+        }
+        $this->_flags &= ~self::STATUS_DISABLED;
+    }
+
+    /**
+     * Disable server's listeners
+     */
+    public function disable() {
+        foreach ($this->_listeners as $listener) {
+            $listener->disable();
+        }
+        $this->_flags |= self::STATUS_DISABLED;
+    }
+
+    /**
+     * @param Connect $connect
+     *
+     * @return Connect
+     */
+    protected function _accept(Connect $connect) {
+        $connect->setup($this);
+        $this->_peers[$connect->getPeerName()] = $connect;
+        if(count($this->_peers) >= $this->_max_conns) {
+            $this->disable();
+        }
+        $connect->closed()->then([$this, "_disconnect"]);
+        $connect->incoming()->then([$this, "_data"]);
+        $connect->release();
+        return $connect;
+    }
+
+    private function _data(Connect $connect) {
+        if($connect) {
+            $connect->busy();
+        }
+        yield \ION::promise($this->_request($connect));
+        $connect->release();
+    }
+
+    /**
+     * @param Connect $connect
+     * @return \Generator|Promise|mixed
+     */
+    protected function _request(Connect $connect) {
+
+    }
+
+    /**
+     * @param Connect $connect
+     *
+     * @return Connect
+     */
+    protected function _disconnect(Connect $connect) {
+        unset($this->_peers[$connect->getPeerName()]);
+        if(count($this->_peers) < $this->_max_conns) {
+            $this->enable();
+        }
+        $this->_disconnect->__invoke($connect);
+    }
+
+    /**
+     * @param Connect $connect
+     */
+    protected function _timeout(Connect $connect) {
+        if($connect->isBusy()) {
+            if($this->_when_req_timeout) {
+               $this->_when_req_timeout->__invoke($connect);
+            }
+        } else {
+            if($this->_when_idle_timeout) {
+               $this->_when_idle_timeout->__invoke($connect);
+            }
+        }
+    }
+
+    /**
+     *
+     * @return Sequence
+     */
+    public function whenAccepted() : Sequence {
+        return $this->_accepted;
+    }
+
+    /**
+     * @return Sequence
+     */
+    public function whenDisconnected() : Sequence {
+        return $this->_disconnect;
+    }
+
+    /**
+     * @return Sequence
+     */
+    public function whenIdleTimeout() : Sequence {
+        return $this->_when_idle_timeout;
+    }
+
+    /**
+     * @return Sequence
+     */
+    public function whenRequestTimeout() : Sequence {
+        return $this->_when_req_timeout;
+    }
+
+    /**
+     * @return Sequence
+     */
+    public function whenClose() : Sequence {
+        return $this->_close;
+    }
+
     /**
      * Listen address
      * @param string $address
@@ -94,80 +222,6 @@ class SocketServer {
         return $listener;
     }
 
-    protected function _setConnectionClass(string $class) {
-        if (!is_subclass_of($class, Connect::class)) {
-            throw new \InvalidArgumentException("Connection class have to extends " . Connect::class);
-        }
-        foreach ($this->_listeners as $listener) {
-            $listener->setStreamClass($class);
-        }
-    }
-
-    public function enable() {
-        foreach ($this->_listeners as $listener) {
-            $listener->enable();
-        }
-        $this->_flags &= ~self::STATUS_DISABLED;
-    }
-
-    public function disable() {
-        foreach ($this->_listeners as $listener) {
-            $listener->disable();
-        }
-        $this->_flags |= self::STATUS_DISABLED;
-    }
-
-    protected function _accept(Connect $connect) {
-        $connect->setup($this);
-        $this->_peers[$connect->getPeerName()] = $connect;
-        if(count($this->_peers) >= $this->_max_conns) {
-            $this->disable();
-        }
-        $connect->closed()->then([$this, "_disconnect"]);
-        $connect->release();
-        return $connect;
-    }
-
-    protected function _disconnect(Connect $connect) {
-        unset($this->_peers[$connect->getPeerName()]);
-        if(count($this->_peers) < $this->_max_conns) {
-            $this->enable();
-        }
-        $this->_disconnect->__invoke($connect);
-        return $connect;
-    }
-
-    protected function _timeout(Connect $connect) {
-        if($connect->isBusy()) {
-            if($this->_when_req_timeout) {
-               $this->_when_req_timeout->__invoke($connect);
-            }
-        } else {
-            if($this->_when_idle_timeout) {
-               $this->_when_idle_timeout->__invoke($connect);
-            }
-        }
-    }
-
-    public function whenAccepted() : Sequence {
-        return $this->_accepted;
-    }
-
-    public function whenDisconnected() : Sequence {
-        return $this->_disconnect;
-    }
-
-    public function whenIdleTimeout() : Sequence {
-        return $this->_when_idle_timeout;
-    }
-
-    public function whenRequestTimeout() : Sequence {
-        return $this->_when_req_timeout;
-    }
-
-    public function whenClose() : Sequence {
-        return $this->_close;
-    }
 
     /**
      * @param string $address
@@ -292,6 +346,9 @@ class SocketServer {
         }
     }
 
+    /**
+     * @param Connect $connect
+     */
     public function release(Connect $connect) {
         $connect->resume();
         if ($this->_idle_timeout > 0) {
@@ -301,6 +358,9 @@ class SocketServer {
         }
     }
 
+    /**
+     * @param Connect $connect
+     */
     public function reserve(Connect $connect) {
         $connect->suspend();
         if ($this->_request_timeout) {

@@ -9,12 +9,16 @@
     }
   ],
   "require": {
-    "php": ">=7.0",
-    "ext-ion": "*",
-    "phpion/phpion": "dev-master"
+    "php": ">=7.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "*"
+    "ext-posix": "*",
+    "phpunit/phpunit": "*",
+    "phpion/ionizer": "*",
+    "phpion/phpion": "dev-master"
+  },
+  "suggest" : {
+    "php-ion/ionizer": "Allows you to install the PHP-ION extension as a package"
   },
   "autoload": {
     "psr-4": {
