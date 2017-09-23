@@ -24,5 +24,6 @@
     "psr-4": {
 	  "ION\\": "src"
 	}
-  }
+  },
+  "minimum-stability": "dev"
 }
